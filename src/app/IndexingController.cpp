@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QMetaObject>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QVariantMap>
 
@@ -46,11 +47,26 @@ QString databaseLocation() {
 } // namespace
 
 // --------------------------------------------------
-// Lifecycle
+// Lifecycle and Settings
 // --------------------------------------------------
 
 IndexingController::IndexingController(QObject* parent)
     : QObject(parent) {
+
+    QSettings settings;
+
+    workerCount_ = std::clamp(
+        settings.value("indexing/workerCount", 4).toInt(),
+        1,
+        16
+    );
+
+    const QString storedFolder =
+        settings.value("indexing/lastFolder").toString();
+
+    if (!storedFolder.isEmpty()) {
+        lastFolder_ = QUrl::fromLocalFile(storedFolder);
+    }
 }
 
 IndexingController::~IndexingController() {
@@ -71,6 +87,75 @@ bool IndexingController::busy() const noexcept {
 
 bool IndexingController::searching() const noexcept {
     return searching_;
+}
+
+int IndexingController::workerCount() const noexcept {
+    return workerCount_;
+}
+
+QUrl IndexingController::lastFolder() const {
+    return lastFolder_;
+}
+
+void IndexingController::setWorkerCount(int count) {
+    if (busy_ || searching_) {
+        return;
+    }
+
+    const int validatedCount =
+        std::clamp(count, 1, 16);
+
+    if (workerCount_ == validatedCount) {
+        return;
+    }
+
+    workerCount_ = validatedCount;
+
+    QSettings settings;
+    settings.setValue(
+        "indexing/workerCount",
+        workerCount_
+    );
+
+    emit workerCountChanged();
+}
+
+void IndexingController::setLastFolder(
+    const QUrl& folder
+) {
+    if (busy_ || searching_) {
+        return;
+    }
+
+    if (!folder.isLocalFile()) {
+        emit failed("Please select a local folder.");
+        return;
+    }
+
+    const QString folderPath =
+        QDir::cleanPath(folder.toLocalFile());
+
+    if (!QDir(folderPath).exists()) {
+        emit failed("Selected folder does not exist.");
+        return;
+    }
+
+    const QUrl normalizedFolder =
+        QUrl::fromLocalFile(folderPath);
+
+    if (lastFolder_ == normalizedFolder) {
+        return;
+    }
+
+    lastFolder_ = normalizedFolder;
+
+    QSettings settings;
+    settings.setValue(
+        "indexing/lastFolder",
+        folderPath
+    );
+
+    emit lastFolderChanged();
 }
 
 // --------------------------------------------------
@@ -102,9 +187,14 @@ void IndexingController::startIndexing(
         !QDir().mkpath(
             QFileInfo(databasePath).absolutePath()
         )) {
-        emit failed("Cannot create application data directory.");
+        emit failed(
+            "Cannot create application data directory."
+        );
         return;
     }
+
+    // Capture configuration before starting the thread.
+    const int selectedWorkers = workerCount_;
 
     busy_ = true;
     emit busyChanged();
@@ -112,7 +202,7 @@ void IndexingController::startIndexing(
 
     try {
         worker_ = std::jthread(
-            [this, folderPath, databasePath](
+            [this, folderPath, databasePath, selectedWorkers](
                 std::stop_token stop
             ) {
                 try {
@@ -121,7 +211,12 @@ void IndexingController::startIndexing(
                     );
 
                     fastindex::indexing::ParallelIndexingService
-                        service(database, 4);
+                        service(
+                            database,
+                            static_cast<std::size_t>(
+                                selectedWorkers
+                            )
+                        );
 
                     const auto stats = service.indexDirectory(
                         toPath(folderPath),
@@ -142,7 +237,8 @@ void IndexingController::startIndexing(
                                 this,
                                 [this, processed, total] {
                                     emit progressUpdated(
-                                        processed, total
+                                        processed,
+                                        total
                                     );
                                 },
                                 Qt::QueuedConnection
@@ -168,17 +264,20 @@ void IndexingController::startIndexing(
 
                     QMetaObject::invokeMethod(
                         this,
-                        [this, processed, total, indexed,
-                         skipped, cancelled] {
+                        [this, processed, total,
+                         indexed, skipped, cancelled] {
                             emit progressUpdated(
-                                processed, total
+                                processed,
+                                total
                             );
 
                             busy_ = false;
                             emit busyChanged();
 
                             emit indexingFinished(
-                                cancelled, indexed, skipped
+                                cancelled,
+                                indexed,
+                                skipped
                             );
                         },
                         Qt::QueuedConnection
@@ -258,14 +357,9 @@ void IndexingController::searchFiles(
                         toPath(databasePath)
                     );
 
-                    // Treat user input as a literal FTS5 phrase.
-                    // Double quotes inside the phrase are escaped.
+                    // Treat input as a literal FTS5 phrase.
                     QString phrase = term;
-                    phrase.replace(
-                        "\"",
-                        "\"\""
-                    );
-
+                    phrase.replace("\"", "\"\"");
                     phrase = "\"" + phrase + "\"";
 
                     const QByteArray utf8 = phrase.toUtf8();
@@ -273,7 +367,9 @@ void IndexingController::searchFiles(
                     const auto matches = database.search(
                         std::string_view(
                             utf8.constData(),
-                            static_cast<std::size_t>(utf8.size())
+                            static_cast<std::size_t>(
+                                utf8.size()
+                            )
                         )
                     );
 
@@ -332,7 +428,10 @@ void IndexingController::searchFiles(
                             searching_ = false;
                             emit searchingChanged();
 
-                            emit searchFinished(results, total);
+                            emit searchFinished(
+                                results,
+                                total
+                            );
                         },
                         Qt::QueuedConnection
                     );
@@ -357,7 +456,9 @@ void IndexingController::searchFiles(
     catch (const std::exception& error) {
         searching_ = false;
         emit searchingChanged();
-        emit searchFailed(QString::fromUtf8(error.what()));
+        emit searchFailed(
+            QString::fromUtf8(error.what())
+        );
     }
 }
 

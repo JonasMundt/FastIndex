@@ -164,7 +164,9 @@ add_executable(fastindex_tests
     tests/SqliteIndexTests.cpp
     tests/IndexingServiceTests.cpp
     tests/BlockingQueueTests.cpp
+    tests/ParallelIndexingServiceTests.cpp
 )
+
 
 
     target_link_libraries(fastindex_tests

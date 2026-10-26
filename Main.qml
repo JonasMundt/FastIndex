@@ -14,7 +14,10 @@ ApplicationWindow {
     Material.accent: Material.Teal
     Material.primary: Material.BlueGrey
 
-    property url selectedFolder: ""
+    // Folder comes directly from saved C++ settings.
+    readonly property url selectedFolder:
+        root.controller.lastFolder
+
     property int processed: 0
     property int total: 0
 
@@ -30,7 +33,6 @@ ApplicationWindow {
     property string searchSummary:
         "Index a folder and search its contents."
 
-    // Escape content before adding highlight markup.
     function highlightSnippet(value) {
         let escaped = String(value)
             .replace(/&/g, "&amp;")
@@ -67,15 +69,27 @@ ApplicationWindow {
     title: "FastIndex"
     color: "#0f172a"
 
+    // ------------------------------------------
+    // Folder Selection
+    // ------------------------------------------
+
     FolderDialog {
         id: folderDialog
         title: "Select folder to index"
 
         onAccepted: {
-            root.selectedFolder = folderDialog.selectedFolder
-            root.statusText = "Folder selected. Ready to index."
+            root.controller.setLastFolder(
+                folderDialog.selectedFolder
+            )
+
+            root.statusText =
+                "Folder selected. Ready to index."
         }
     }
+
+    // ------------------------------------------
+    // Controller Signals
+    // ------------------------------------------
 
     Connections {
         target: root.controller
@@ -113,15 +127,16 @@ ApplicationWindow {
         }
     }
 
+    // ------------------------------------------
+    // Main Layout
+    // ------------------------------------------
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 24
         spacing: 14
 
-        // ------------------------------------------
         // Header
-        // ------------------------------------------
-
         RowLayout {
             Layout.fillWidth: true
             spacing: 12
@@ -178,9 +193,9 @@ ApplicationWindow {
             }
         }
 
-        // ------------------------------------------
+        // --------------------------------------
         // Folder Card
-        // ------------------------------------------
+        // --------------------------------------
 
         Rectangle {
             Layout.fillWidth: true
@@ -207,6 +222,7 @@ ApplicationWindow {
 
                     Button {
                         text: "Browse..."
+
                         enabled: !root.controller.busy
                                  && !root.controller.searching
 
@@ -227,9 +243,9 @@ ApplicationWindow {
             }
         }
 
-        // ------------------------------------------
-        // Indexing Buttons
-        // ------------------------------------------
+        // --------------------------------------
+        // Indexing Actions and Worker Setting
+        // --------------------------------------
 
         RowLayout {
             Layout.fillWidth: true
@@ -273,15 +289,36 @@ ApplicationWindow {
             }
 
             Text {
-                text: "C++20  |  Qt 6  |  SQLite FTS5"
-                font.pixelSize: 11
-                color: "#64748b"
+                text: "Worker threads"
+                font.pixelSize: 12
+                color: "#94a3b8"
+            }
+
+            SpinBox {
+                id: workerSelector
+
+                from: 1
+                to: 16
+                stepSize: 1
+
+                value: root.controller.workerCount
+
+                editable: false
+
+                enabled: !root.controller.busy
+                         && !root.controller.searching
+
+                Layout.preferredWidth: 112
+
+                onValueModified: {
+                    root.controller.setWorkerCount(value)
+                }
             }
         }
 
-        // ------------------------------------------
+        // --------------------------------------
         // Progress Card
-        // ------------------------------------------
+        // --------------------------------------
 
         Rectangle {
             Layout.fillWidth: true
@@ -346,9 +383,9 @@ ApplicationWindow {
             wrapMode: Text.WordWrap
         }
 
-        // ------------------------------------------
+        // --------------------------------------
         // Search Card
-        // ------------------------------------------
+        // --------------------------------------
 
         Rectangle {
             Layout.fillWidth: true

@@ -23,6 +23,19 @@ class IndexingController : public QObject {
         NOTIFY searchingChanged
     )
 
+    Q_PROPERTY(
+        int workerCount
+        READ workerCount
+        WRITE setWorkerCount
+        NOTIFY workerCountChanged
+    )
+
+    Q_PROPERTY(
+        QUrl lastFolder
+        READ lastFolder
+        NOTIFY lastFolderChanged
+    )
+
 public:
     explicit IndexingController(QObject* parent = nullptr);
     ~IndexingController() override;
@@ -33,6 +46,15 @@ public:
     [[nodiscard]]
     bool searching() const noexcept;
 
+    [[nodiscard]]
+    int workerCount() const noexcept;
+
+    [[nodiscard]]
+    QUrl lastFolder() const;
+
+    Q_INVOKABLE void setWorkerCount(int count);
+    Q_INVOKABLE void setLastFolder(const QUrl& folder);
+
     Q_INVOKABLE void startIndexing(const QUrl& folder);
     Q_INVOKABLE void cancelIndexing();
 
@@ -42,6 +64,9 @@ public:
 signals:
     void busyChanged();
     void searchingChanged();
+
+    void workerCountChanged();
+    void lastFolderChanged();
 
     void progressUpdated(int processed, int total);
 
@@ -62,6 +87,9 @@ signals:
 private:
     bool busy_ = false;
     bool searching_ = false;
+
+    int workerCount_ = 4;
+    QUrl lastFolder_;
 
     std::jthread worker_;
     std::jthread searchWorker_;
