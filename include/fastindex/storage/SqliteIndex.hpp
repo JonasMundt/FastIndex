@@ -5,6 +5,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <cstddef>
+#include <stop_token>
 
 struct sqlite3;
 
@@ -65,6 +67,14 @@ public:
     bool remove(
         const std::filesystem::path& filePath
     );
+
+    
+    [[nodiscard]]
+    std::size_t removeMissingFilesUnder(
+        const std::filesystem::path& directory,
+        std::stop_token stop = {}
+    );
+
 
     // ------------------------------------------
     // Search

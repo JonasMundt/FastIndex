@@ -6,6 +6,9 @@
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <filesystem>
+#include <fstream>
+#include <stop_token>
 
 namespace fs = std::filesystem;
 
@@ -163,6 +166,81 @@ TEST_F(SqliteIndexTest, RollbackRestoresDeletedFile) {
 
     EXPECT_EQ(
         index.search("rollbackprotectedneedle").size(),
+        1u
+    );
+}
+
+TEST_F(SqliteIndexTest, CleanupRemovesOnlyMissingFilesInSelectedFolder) {
+    namespace fs = std::filesystem;
+
+    const auto base = databasePath().parent_path();
+    const auto selected = base / "cleanup_selected";
+    const auto other = base / "cleanup_other";
+
+    fs::create_directories(selected);
+    fs::create_directories(other);
+
+    const auto deletedFile = selected / "deleted.txt";
+    const auto existingFile = selected / "existing.txt";
+    const auto otherFile = other / "other.txt";
+
+    {
+        std::ofstream(deletedFile) << "deletedneedle";
+        std::ofstream(existingFile) << "existingneedle";
+        std::ofstream(otherFile) << "otherneedle";
+    }
+
+    SqliteIndex index(databasePath());
+
+    index.upsert(deletedFile, "deletedneedle");
+    index.upsert(existingFile, "existingneedle");
+    index.upsert(otherFile, "otherneedle");
+
+    ASSERT_TRUE(fs::remove(deletedFile));
+
+    const auto removed =
+        index.removeMissingFilesUnder(selected);
+
+    EXPECT_EQ(removed, 1u);
+
+    EXPECT_TRUE(index.search("deletedneedle").empty());
+
+    EXPECT_EQ(
+        index.search("existingneedle").size(),
+        1u
+    );
+
+    EXPECT_EQ(
+        index.search("otherneedle").size(),
+        1u
+    );
+}
+
+TEST_F(SqliteIndexTest, CleanupRespectsCancellation) {
+    namespace fs = std::filesystem;
+
+    const auto root =
+        databasePath().parent_path() / "cleanup_cancel";
+
+    fs::create_directories(root);
+
+    const auto missingFile = root / "missing.txt";
+
+    SqliteIndex index(databasePath());
+    index.upsert(missingFile, "cancelneedle");
+
+    std::stop_source stopSource;
+    stopSource.request_stop();
+
+    const auto removed = index.removeMissingFilesUnder(
+        root,
+        stopSource.get_token()
+    );
+
+    EXPECT_EQ(removed, 0u);
+
+    EXPECT_EQ(
+        index.search("cancelneedle").size(),
         1u
     );
 }

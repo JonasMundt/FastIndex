@@ -7,6 +7,9 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <stdexcept>
+#include <system_error>
+#include <vector>
 
 namespace fastindex::storage {
 
@@ -241,6 +244,158 @@ bool SqliteIndex::remove(
 
     return sqlite3_changes(database_) > 0;
 }
+
+
+// --------------------------------------------------
+// Remove Missing Files Within a Directory
+// --------------------------------------------------
+
+std::size_t SqliteIndex::removeMissingFilesUnder(
+    const std::filesystem::path& directory,
+    std::stop_token stop
+) {
+    namespace fs = std::filesystem;
+
+    if (stop.stop_requested()) {
+        return 0;
+    }
+
+    const fs::path root = directory.lexically_normal();
+
+    if (!root.is_absolute()) {
+        throw std::invalid_argument(
+            "Cleanup requires an absolute directory path"
+        );
+    }
+
+    // Never clean a directory that is no longer accessible.
+    std::error_code rootError;
+
+    if (!fs::is_directory(root, rootError)) {
+        throw std::runtime_error(
+            "Cleanup directory is unavailable: " +
+            rootError.message()
+        );
+    }
+
+    // Check containment by path components.
+    // String prefix comparisons would be unsafe:
+    // C:/docs must not match C:/docs-backup.
+    const auto belongsToRoot =
+        [&root](const fs::path& candidate) {
+            const fs::path normalized =
+                candidate.lexically_normal();
+
+            auto rootPart = root.begin();
+            auto filePart = normalized.begin();
+
+            while (rootPart != root.end()) {
+                if (filePart == normalized.end() ||
+                    *filePart != *rootPart) {
+                    return false;
+                }
+
+                ++rootPart;
+                ++filePart;
+            }
+
+            return filePart != normalized.end();
+        };
+
+    std::vector<fs::path> indexedPaths;
+
+    // Read paths first, then finalize the SELECT
+    // before starting any deletion.
+    {
+        auto statement = prepare(
+            database_,
+            "SELECT path FROM files;"
+        );
+
+        while (true) {
+            const int result =
+                sqlite3_step(statement.get());
+
+            if (result == SQLITE_DONE) {
+                break;
+            }
+
+            if (result != SQLITE_ROW) {
+                throw makeError(
+                    database_,
+                    "Cannot read indexed paths"
+                );
+            }
+
+            const auto* rawPath =
+                sqlite3_column_text(statement.get(), 0);
+
+            if (rawPath == nullptr) {
+                throw std::runtime_error(
+                    "Invalid indexed path"
+                );
+            }
+
+            const auto path = fs::u8path(
+                reinterpret_cast<const char*>(rawPath)
+            );
+
+            if (belongsToRoot(path)) {
+                indexedPaths.push_back(path);
+            }
+        }
+    }
+
+    std::vector<fs::path> missingPaths;
+
+    for (const auto& path : indexedPaths) {
+        if (stop.stop_requested()) {
+            return 0;
+        }
+
+        std::error_code error;
+
+        const bool exists = fs::exists(path, error);
+
+        // Unknown status: preserve the indexed entry.
+        if (error) {
+            continue;
+        }
+
+        if (!exists) {
+            missingPaths.push_back(path);
+        }
+    }
+
+    if (missingPaths.empty() || stop.stop_requested()) {
+        return 0;
+    }
+
+    // All deletions are committed together.
+    // Cancellation or an exception rolls them back.
+    Transaction transaction(*this);
+
+    std::size_t removed = 0;
+
+    for (const auto& path : missingPaths) {
+        if (stop.stop_requested()) {
+            return 0;
+        }
+
+        if (remove(path)) {
+            ++removed;
+        }
+    }
+
+    if (stop.stop_requested()) {
+        return 0;
+    }
+
+    transaction.commit();
+
+    return removed;
+}
+
 
 
 // --------------------------------------------------

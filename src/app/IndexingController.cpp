@@ -245,6 +245,17 @@ void IndexingController::startIndexing(
                             );
                         }
                     );
+                    
+                    // Clean up only after a successful, complete indexing run.
+                    if (!stats.cancelled &&
+                        stats.errors.empty() &&
+                        !stop.stop_requested()) {
+
+                        database.removeMissingFilesUnder(
+                            toPath(folderPath),
+                            stop
+                        );
+                    }
 
                     const int processed =
                         static_cast<int>(
