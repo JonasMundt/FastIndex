@@ -3,17 +3,29 @@ cmake_minimum_required(VERSION 3.21)
 
 project(FastIndex VERSION 0.1 LANGUAGES CXX)
 
+# --------------------------------------------------
+# C++ Configuration
+# --------------------------------------------------
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# --------------------------------------------------
+# Qt Configuration
+# --------------------------------------------------
 
 find_package(Qt6 6.12 REQUIRED COMPONENTS Quick)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
-# Core library (independent from Qt)
+# --------------------------------------------------
+# Core Library (independent from Qt)
+# --------------------------------------------------
+
 add_library(fastindex_core STATIC
     src/core/FileScanner.cpp
+    src/core/FileReader.cpp
 )
 
 target_include_directories(fastindex_core
@@ -25,7 +37,10 @@ target_compile_features(fastindex_core
     PUBLIC cxx_std_20
 )
 
-# Desktop application
+# --------------------------------------------------
+# Desktop Application
+# --------------------------------------------------
+
 qt_add_executable(FastIndex
     src/main.cpp
 )
@@ -43,7 +58,10 @@ target_link_libraries(FastIndex
         fastindex_core
 )
 
-# Automated tests
+# --------------------------------------------------
+# Automated Tests (GoogleTest)
+# --------------------------------------------------
+
 include(CTest)
 
 if(BUILD_TESTING)
@@ -62,6 +80,7 @@ if(BUILD_TESTING)
 
     add_executable(fastindex_tests
         tests/FileScannerTests.cpp
+        tests/FileReaderTests.cpp
     )
 
     target_link_libraries(fastindex_tests
@@ -73,4 +92,3 @@ if(BUILD_TESTING)
     include(GoogleTest)
     gtest_discover_tests(fastindex_tests)
 endif()
-
