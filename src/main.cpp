@@ -4,6 +4,7 @@
 #include <QCoreApplication>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
+#include <QQuickStyle>
 #include <QVariant>
 
 int main(int argc, char* argv[]) {
@@ -11,6 +12,9 @@ int main(int argc, char* argv[]) {
 
     QCoreApplication::setOrganizationName("FastIndex");
     QCoreApplication::setApplicationName("FastIndex");
+
+    // Configure style before loading QML.
+    QQuickStyle::setStyle("Material");
 
     IndexingController controller;
 

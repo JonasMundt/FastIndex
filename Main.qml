@@ -1,6 +1,7 @@
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Controls.Material
 import QtQuick.Dialogs
 import QtQuick.Layouts
 
@@ -9,16 +10,39 @@ ApplicationWindow {
 
     required property var controller
 
+    Material.theme: Material.Dark
+    Material.accent: Material.Teal
+    Material.primary: Material.BlueGrey
+
     property url selectedFolder: ""
     property int processed: 0
     property int total: 0
 
+    readonly property int progressPercent:
+        total > 0
+        ? Math.min(100, Math.round(processed * 100 / total))
+        : 0
+
     property string statusText:
-        "Select a folder to begin."
+        "Select a folder to get started."
 
     property var searchResults: []
     property string searchSummary:
-        "Index a folder, then search its contents."
+        "Index a folder and search its contents."
+
+    // Escape content before adding highlight markup.
+    function highlightSnippet(value) {
+        let escaped = String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+
+        return escaped.replace(
+            /\[([^\]]+)\]/g,
+            '<font color="#5eead4"><b>$1</b></font>'
+        )
+    }
 
     function performSearch() {
         if (searchField.text.trim().length === 0 ||
@@ -33,11 +57,11 @@ ApplicationWindow {
         controller.searchFiles(searchField.text)
     }
 
-    width: 960
+    width: 1050
     height: 760
 
-    minimumWidth: 680
-    minimumHeight: 580
+    minimumWidth: 720
+    minimumHeight: 600
 
     visible: true
     title: "FastIndex"
@@ -64,8 +88,12 @@ ApplicationWindow {
         function onIndexingFinished(cancelled, indexed, skipped) {
             root.statusText = cancelled
                 ? "Indexing cancelled. Indexed: " + indexed
-                : "Indexing completed! Indexed: " + indexed
-                  + ", skipped: " + skipped
+                : "Indexing complete! " + indexed
+                  + " files indexed, " + skipped + " skipped."
+        }
+
+        function onFailed(message) {
+            root.statusText = "Error: " + message
         }
 
         function onSearchFinished(results, total) {
@@ -75,55 +103,102 @@ ApplicationWindow {
                 ? "No matching files found."
                 : total + " matching files"
                   + (total > results.length
-                     ? " (showing first " + results.length + ")"
-                     : "")
+                    ? " - showing first " + results.length
+                    : "")
         }
 
         function onSearchFailed(message) {
             root.searchResults = []
             root.searchSummary = "Search error: " + message
         }
-
-        function onFailed(message) {
-            root.statusText = "Error: " + message
-        }
     }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 28
-        spacing: 16
+        anchors.margins: 24
+        spacing: 14
 
+        // ------------------------------------------
         // Header
-        Text {
-            text: "FastIndex"
-            font.pixelSize: 34
-            font.bold: true
-            color: "#f8fafc"
+        // ------------------------------------------
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 12
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 4
+
+                Text {
+                    text: "FastIndex"
+                    font.pixelSize: 32
+                    font.bold: true
+                    color: "#f8fafc"
+                }
+
+                Text {
+                    text: "FAST LOCAL FILE SEARCH"
+                    font.pixelSize: 11
+                    font.letterSpacing: 1.5
+                    color: "#94a3b8"
+                }
+            }
+
+            Rectangle {
+                implicitWidth: 135
+                implicitHeight: 34
+                radius: 17
+                color: "#193c3b"
+
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 8
+
+                    Rectangle {
+                        width: 8
+                        height: 8
+                        radius: 4
+                        color: "#5eead4"
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    Text {
+                        text: root.controller.busy
+                            ? "INDEXING"
+                            : root.controller.searching
+                              ? "SEARCHING"
+                              : "LOCAL INDEX"
+
+                        color: "#5eead4"
+                        font.pixelSize: 11
+                        font.bold: true
+                    }
+                }
+            }
         }
 
-        Text {
-            text: "Fast local file indexing with C++20"
-            font.pixelSize: 14
-            color: "#94a3b8"
-        }
+        // ------------------------------------------
+        // Folder Card
+        // ------------------------------------------
 
-        // Folder Selection
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: 105
+            implicitHeight: 118
             radius: 12
             color: "#1e293b"
 
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 16
-                spacing: 10
+                spacing: 8
 
                 Text {
-                    text: "Selected folder"
-                    color: "#cbd5e1"
-                    font.pixelSize: 14
+                    text: "SELECTED DIRECTORY"
+                    font.pixelSize: 11
+                    font.bold: true
+                    font.letterSpacing: 1
+                    color: "#94a3b8"
                 }
 
                 RowLayout {
@@ -133,29 +208,36 @@ ApplicationWindow {
                     Button {
                         text: "Browse..."
                         enabled: !root.controller.busy
+                                 && !root.controller.searching
 
                         onClicked: folderDialog.open()
                     }
 
                     Text {
                         Layout.fillWidth: true
+
                         text: root.selectedFolder.toString()
-                              || "No folder selected"
+                            || "No folder selected"
+
                         color: "#f8fafc"
-                        elide: Text.ElideMiddle
                         font.pixelSize: 13
+                        elide: Text.ElideMiddle
                     }
                 }
             }
         }
 
-        // Indexing Actions
+        // ------------------------------------------
+        // Indexing Buttons
+        // ------------------------------------------
+
         RowLayout {
             Layout.fillWidth: true
             spacing: 12
 
             Button {
                 text: "Start indexing"
+                highlighted: true
 
                 enabled: !root.controller.busy
                          && !root.controller.searching
@@ -164,6 +246,7 @@ ApplicationWindow {
                 onClicked: {
                     root.processed = 0
                     root.total = 0
+
                     root.searchResults = []
                     root.searchSummary = "Indexing in progress..."
                     root.statusText = "Indexing started..."
@@ -176,6 +259,7 @@ ApplicationWindow {
 
             Button {
                 text: "Cancel"
+
                 enabled: root.controller.busy
 
                 onClicked: {
@@ -183,12 +267,26 @@ ApplicationWindow {
                     root.controller.cancelIndexing()
                 }
             }
+
+            Item {
+                Layout.fillWidth: true
+            }
+
+            Text {
+                text: "C++20  |  Qt 6  |  SQLite FTS5"
+                font.pixelSize: 11
+                color: "#64748b"
+            }
         }
 
-        // Indexing Progress
+        // ------------------------------------------
+        // Progress Card
+        // ------------------------------------------
+
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: 130
+            implicitHeight: 126
+
             radius: 12
             color: "#1e293b"
 
@@ -197,15 +295,31 @@ ApplicationWindow {
                 anchors.margins: 16
                 spacing: 12
 
-                Text {
-                    text: "Indexing progress"
-                    font.pixelSize: 16
-                    font.bold: true
-                    color: "#f8fafc"
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        text: "Indexing progress"
+                        font.pixelSize: 16
+                        font.bold: true
+                        color: "#f8fafc"
+                    }
+
+                    Item {
+                        Layout.fillWidth: true
+                    }
+
+                    Text {
+                        text: root.progressPercent + "%"
+                        font.pixelSize: 15
+                        font.bold: true
+                        color: "#5eead4"
+                    }
                 }
 
                 ProgressBar {
                     Layout.fillWidth: true
+
                     from: 0
                     to: root.total > 0 ? root.total : 1
                     value: root.processed
@@ -217,8 +331,9 @@ ApplicationWindow {
                 Text {
                     text: root.processed + " / "
                           + root.total + " files processed"
-                    color: "#cbd5e1"
-                    font.pixelSize: 13
+
+                    color: "#94a3b8"
+                    font.pixelSize: 12
                 }
             }
         }
@@ -227,16 +342,18 @@ ApplicationWindow {
             Layout.fillWidth: true
             text: root.statusText
             color: "#5eead4"
-            wrapMode: Text.WordWrap
             font.pixelSize: 13
+            wrapMode: Text.WordWrap
         }
 
-        // Search Panel
+        // ------------------------------------------
+        // Search Card
+        // ------------------------------------------
+
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-
-            Layout.minimumHeight: 180
+            Layout.minimumHeight: 170
 
             radius: 12
             color: "#1e293b"
@@ -246,11 +363,26 @@ ApplicationWindow {
                 anchors.margins: 16
                 spacing: 12
 
-                Text {
-                    text: "Search indexed files"
-                    font.pixelSize: 18
-                    font.bold: true
-                    color: "#f8fafc"
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        text: "Search your files"
+                        font.pixelSize: 18
+                        font.bold: true
+                        color: "#f8fafc"
+                    }
+
+                    Item {
+                        Layout.fillWidth: true
+                    }
+
+                    Text {
+                        text: "FULL-TEXT SEARCH"
+                        font.pixelSize: 10
+                        font.letterSpacing: 1
+                        color: "#64748b"
+                    }
                 }
 
                 RowLayout {
@@ -262,7 +394,10 @@ ApplicationWindow {
 
                         Layout.fillWidth: true
 
-                        placeholderText: "Enter a search term..."
+                        placeholderText:
+                            "Search indexed content..."
+
+                        selectByMouse: true
 
                         enabled: !root.controller.busy
                                  && !root.controller.searching
@@ -272,11 +407,15 @@ ApplicationWindow {
 
                     Button {
                         text: root.controller.searching
-                              ? "Searching..." : "Search"
+                            ? "Searching..."
+                            : "Search"
 
-                        enabled: searchField.text.trim().length > 0
-                                 && !root.controller.busy
-                                 && !root.controller.searching
+                        highlighted: true
+
+                        enabled:
+                            searchField.text.trim().length > 0
+                            && !root.controller.busy
+                            && !root.controller.searching
 
                         onClicked: root.performSearch()
                     }
@@ -286,9 +425,12 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     text: root.searchSummary
                     color: "#94a3b8"
-                    font.pixelSize: 13
-                    wrapMode: Text.WordWrap
+                    font.pixelSize: 12
                 }
+
+                // ----------------------------------
+                // Search Results
+                // ----------------------------------
 
                 ListView {
                     id: resultList
@@ -311,28 +453,50 @@ ApplicationWindow {
                         required property var modelData
 
                         width: resultList.width
-                        height: 105
+                        height: 104
 
-                        radius: 8
-                        color: "#334155"
+                        radius: 9
+
+                        color: cardMouse.containsMouse
+                            ? "#334155"
+                            : "#273449"
+
+                        border.width: cardMouse.containsMouse
+                            ? 1 : 0
+
+                        border.color: "#5eead4"
 
                         ColumnLayout {
                             anchors.fill: parent
                             anchors.margins: 12
                             spacing: 5
 
-                            Text {
+                            RowLayout {
                                 Layout.fillWidth: true
-                                text: resultCard.modelData.name
-                                color: "#5eead4"
-                                font.bold: true
-                                font.pixelSize: 14
-                                elide: Text.ElideRight
+
+                                Text {
+                                    Layout.fillWidth: true
+
+                                    text: resultCard.modelData.name
+
+                                    color: "#5eead4"
+                                    font.pixelSize: 14
+                                    font.bold: true
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    text: "OPEN"
+                                    font.pixelSize: 10
+                                    color: "#94a3b8"
+                                }
                             }
 
                             Text {
                                 Layout.fillWidth: true
+
                                 text: resultCard.modelData.path
+
                                 color: "#94a3b8"
                                 font.pixelSize: 11
                                 elide: Text.ElideMiddle
@@ -340,15 +504,27 @@ ApplicationWindow {
 
                             Text {
                                 Layout.fillWidth: true
-                                text: resultCard.modelData.snippet
+
+                                text: root.highlightSnippet(
+                                    resultCard.modelData.snippet
+                                )
+
+                                textFormat: Text.RichText
                                 color: "#f8fafc"
                                 font.pixelSize: 12
+
+                                maximumLineCount: 2
                                 elide: Text.ElideRight
+                                wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                             }
                         }
 
                         MouseArea {
+                            id: cardMouse
+
                             anchors.fill: parent
+                            hoverEnabled: true
+
                             cursorShape: Qt.PointingHandCursor
 
                             onClicked: {
@@ -358,6 +534,19 @@ ApplicationWindow {
                             }
                         }
                     }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignHCenter
+
+                    visible: root.searchResults.length === 0
+                             && !root.controller.searching
+
+                    text: "Your search results will appear here."
+                    color: "#64748b"
+                    font.pixelSize: 12
+                    horizontalAlignment: Text.AlignHCenter
                 }
             }
         }
