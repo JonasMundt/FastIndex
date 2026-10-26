@@ -178,3 +178,61 @@ TEST_F(
     EXPECT_EQ(stats.indexed, 0u);
     EXPECT_TRUE(index.search("searchable").empty());
 }
+
+TEST_F(
+    ParallelIndexingServiceTest,
+    CancelsAfterFirstCommittedBatch
+) {
+    constexpr int fileCount = 250;
+    constexpr std::size_t batchSize = 100;
+
+    // Create 250 test files.
+    for (int i = 0; i < fileCount; ++i) {
+        writeFile(
+            "file" + std::to_string(i) + ".txt",
+            "cancelneedle document " + std::to_string(i)
+        );
+    }
+
+    std::stop_source stopSource;
+
+    std::size_t progressCalls = 0;
+
+    {
+        SqliteIndex index(databasePath());
+        ParallelIndexingService service(index, 4);
+
+        const auto stats = service.indexDirectory(
+            documents_,
+            stopSource.get_token(),
+
+            [&](const auto& progress) {
+                ++progressCalls;
+
+                // Cancel after the first committed batch.
+                if (progress.indexed >= batchSize) {
+                    stopSource.request_stop();
+                }
+            }
+        );
+
+        EXPECT_TRUE(stats.cancelled);
+
+        EXPECT_EQ(stats.discovered, 250u);
+        EXPECT_EQ(stats.indexed, 100u);
+        EXPECT_EQ(stats.skipped, 0u);
+
+        EXPECT_EQ(progressCalls, 1u);
+    }
+
+    // Reopen the database and verify persistence.
+    {
+        SqliteIndex index(databasePath());
+
+        const auto results =
+            index.search("cancelneedle");
+
+        EXPECT_EQ(results.size(), batchSize);
+    }
+}
+

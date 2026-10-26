@@ -148,3 +148,36 @@ TEST_F(IndexingServiceTest, RejectsInvalidDirectory) {
         std::invalid_argument
     );
 }
+
+TEST_F(IndexingServiceTest, CommitsIncompleteFinalBatch) {
+    constexpr int fileCount = 101;
+
+    for (int i = 0; i < fileCount; ++i) {
+        writeFile(
+            "file" + std::to_string(i) + ".txt",
+            "batchneedle document " + std::to_string(i)
+        );
+    }
+
+    {
+        SqliteIndex index(databasePath());
+        IndexingService service(index);
+
+        const auto stats =
+            service.indexDirectory(documents_);
+
+        EXPECT_EQ(stats.discovered, 101u);
+        EXPECT_EQ(stats.indexed, 101u);
+        EXPECT_EQ(stats.skipped, 0u);
+    }
+
+    // Reopen database to verify persistence.
+    {
+        SqliteIndex index(databasePath());
+
+        const auto results =
+            index.search("batchneedle");
+
+        EXPECT_EQ(results.size(), 101u);
+    }
+}

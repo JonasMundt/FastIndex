@@ -5,12 +5,16 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <functional>
 #include <stop_token>
 
 namespace fastindex::indexing {
 
 class ParallelIndexingService {
 public:
+    using ProgressCallback =
+        std::function<void(const IndexingStats&)>;
+
     explicit ParallelIndexingService(
         storage::SqliteIndex& index,
         std::size_t workerCount = 4,
@@ -20,7 +24,8 @@ public:
     [[nodiscard]]
     IndexingStats indexDirectory(
         const std::filesystem::path& directory,
-        std::stop_token stop = {}
+        std::stop_token stop = {},
+        ProgressCallback onProgress = {}
     );
 
 private:

@@ -20,10 +20,6 @@ namespace fastindex::indexing {
 
 namespace {
 
-// --------------------------------------------------
-// Worker Result
-// --------------------------------------------------
-
 struct ReadResult {
     std::filesystem::path path;
     std::string content;
@@ -58,11 +54,11 @@ ParallelIndexingService::ParallelIndexingService(
 
 IndexingStats ParallelIndexingService::indexDirectory(
     const std::filesystem::path& directory,
-    std::stop_token externalStop
+    std::stop_token externalStop,
+    ProgressCallback onProgress
 ) {
     IndexingStats stats;
 
-    // Check for cancellation before starting.
     if (externalStop.stop_requested()) {
         stats.cancelled = true;
         return stats;
@@ -72,7 +68,7 @@ IndexingStats ParallelIndexingService::indexDirectory(
     const auto files = scanner_.scan(directory);
     stats.discovered = files.size();
 
-    // Bounded queue for processed file contents.
+    // Bound the number of buffered file contents.
     concurrency::BlockingQueue<ReadResult> results(
         workerCount_
     );
@@ -219,14 +215,14 @@ IndexingStats ParallelIndexingService::indexDirectory(
                 continue;
             }
 
-            // Start a new transaction if necessary.
+            // Start transaction when required.
             if (!transaction) {
                 transaction = std::make_unique<
                     storage::SqliteIndex::Transaction
                 >(index_);
             }
 
-            // Store the processed file.
+            // Store file content.
             index_.upsert(
                 result->path,
                 result->content
@@ -235,22 +231,31 @@ IndexingStats ParallelIndexingService::indexDirectory(
             ++stats.indexed;
             ++pendingWrites;
 
-            // Commit a full batch.
+            // Commit full batch.
             if (pendingWrites == batchSize) {
                 transaction->commit();
                 transaction.reset();
 
                 pendingWrites = 0;
+
+                // Report committed progress.
+                if (onProgress) {
+                    onProgress(stats);
+                }
             }
         }
 
-        // Commit the remaining files.
+        // Commit remaining files.
         if (transaction) {
             transaction->commit();
+            transaction.reset();
+
+            if (onProgress) {
+                onProgress(stats);
+            }
         }
     }
     catch (...) {
-        // Stop workers if a database error occurs.
         stopSource.request_stop();
         results.close();
 
@@ -258,8 +263,6 @@ IndexingStats ParallelIndexingService::indexDirectory(
             thread.join();
         }
 
-        // Transaction destructor rolls back
-        // any uncommitted changes.
         throw;
     }
 
@@ -287,7 +290,9 @@ IndexingStats ParallelIndexingService::indexDirectory(
     // Final Statistics
     // --------------------------------------------------
 
-    stats.cancelled = token.stop_requested();
+    stats.cancelled =
+        token.stop_requested() &&
+        (stats.indexed + stats.skipped < stats.discovered);
 
     return stats;
 }
