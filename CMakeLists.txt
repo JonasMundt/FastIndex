@@ -1,7 +1,7 @@
 
 cmake_minimum_required(VERSION 3.21)
 
-project(FastIndex VERSION 0.1 LANGUAGES CXX)
+project(FastIndex VERSION 0.1 LANGUAGES C CXX)
 
 # --------------------------------------------------
 # C++ Configuration
@@ -20,7 +20,26 @@ find_package(Qt6 6.12 REQUIRED COMPONENTS Quick)
 qt_standard_project_setup(REQUIRES 6.8)
 
 # --------------------------------------------------
-# Core Library (independent from Qt)
+# SQLite with FTS5
+# --------------------------------------------------
+
+add_library(sqlite3 STATIC
+    third_party/sqlite/sqlite3.c
+)
+
+target_include_directories(sqlite3
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite
+)
+
+target_compile_definitions(sqlite3
+    PRIVATE
+        SQLITE_ENABLE_FTS5=1
+        SQLITE_OMIT_LOAD_EXTENSION=1
+)
+
+# --------------------------------------------------
+# Core Library
 # --------------------------------------------------
 
 add_library(fastindex_core STATIC
@@ -35,6 +54,23 @@ target_include_directories(fastindex_core
 
 target_compile_features(fastindex_core
     PUBLIC cxx_std_20
+)
+
+# --------------------------------------------------
+# Storage Library
+# --------------------------------------------------
+
+add_library(fastindex_storage STATIC
+    src/storage/SqliteIndex.cpp
+)
+
+target_include_directories(fastindex_storage
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(fastindex_storage
+    PRIVATE sqlite3
 )
 
 # --------------------------------------------------
@@ -56,10 +92,11 @@ target_link_libraries(FastIndex
     PRIVATE
         Qt6::Quick
         fastindex_core
+        fastindex_storage
 )
 
 # --------------------------------------------------
-# Automated Tests (GoogleTest)
+# Automated Tests
 # --------------------------------------------------
 
 include(CTest)
@@ -81,11 +118,13 @@ if(BUILD_TESTING)
     add_executable(fastindex_tests
         tests/FileScannerTests.cpp
         tests/FileReaderTests.cpp
+        tests/SqliteIndexTests.cpp
     )
 
     target_link_libraries(fastindex_tests
         PRIVATE
             fastindex_core
+            fastindex_storage
             GTest::gtest_main
     )
 
