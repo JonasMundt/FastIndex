@@ -4,14 +4,20 @@
 #include "fastindex/indexing/ParallelIndexingService.hpp"
 #include "fastindex/storage/SqliteIndex.hpp"
 
-#include <QCoreApplication>
+#include <QByteArray>
+#include <QDesktopServices>
 #include <QDir>
+#include <QFileInfo>
 #include <QMetaObject>
 #include <QStandardPaths>
+#include <QVariantMap>
 
+#include <algorithm>
+#include <cstddef>
 #include <exception>
 #include <filesystem>
-#include <string>
+#include <string_view>
+#include <utility>
 
 namespace {
 
@@ -24,7 +30,24 @@ std::filesystem::path toPath(const QString& value) {
 #endif
 }
 
+QString databaseLocation() {
+    const QString directory =
+        QStandardPaths::writableLocation(
+            QStandardPaths::AppLocalDataLocation
+        );
+
+    if (directory.isEmpty()) {
+        return {};
+    }
+
+    return QDir(directory).filePath("fastindex.db");
+}
+
 } // namespace
+
+// --------------------------------------------------
+// Lifecycle
+// --------------------------------------------------
 
 IndexingController::IndexingController(QObject* parent)
     : QObject(parent) {
@@ -33,6 +56,12 @@ IndexingController::IndexingController(QObject* parent)
 IndexingController::~IndexingController() {
     if (worker_.joinable()) {
         worker_.request_stop();
+        worker_.join();
+    }
+
+    if (searchWorker_.joinable()) {
+        searchWorker_.request_stop();
+        searchWorker_.join();
     }
 }
 
@@ -40,10 +69,18 @@ bool IndexingController::busy() const noexcept {
     return busy_;
 }
 
+bool IndexingController::searching() const noexcept {
+    return searching_;
+}
+
+// --------------------------------------------------
+// Indexing
+// --------------------------------------------------
+
 void IndexingController::startIndexing(
     const QUrl& folder
 ) {
-    if (busy_) {
+    if (busy_ || searching_) {
         return;
     }
 
@@ -59,19 +96,15 @@ void IndexingController::startIndexing(
         return;
     }
 
-    const QString dataDirectory =
-        QStandardPaths::writableLocation(
-            QStandardPaths::AppLocalDataLocation
-        );
+    const QString databasePath = databaseLocation();
 
-    if (dataDirectory.isEmpty() ||
-        !QDir().mkpath(dataDirectory)) {
+    if (databasePath.isEmpty() ||
+        !QDir().mkpath(
+            QFileInfo(databasePath).absolutePath()
+        )) {
         emit failed("Cannot create application data directory.");
         return;
     }
-
-    const QString databasePath =
-        QDir(dataDirectory).filePath("fastindex.db");
 
     busy_ = true;
     emit busyChanged();
@@ -178,5 +211,175 @@ void IndexingController::startIndexing(
 void IndexingController::cancelIndexing() {
     if (busy_ && worker_.joinable()) {
         worker_.request_stop();
+    }
+}
+
+// --------------------------------------------------
+// Full-Text Search
+// --------------------------------------------------
+
+void IndexingController::searchFiles(
+    const QString& query
+) {
+    if (busy_ || searching_) {
+        return;
+    }
+
+    const QString term = query.trimmed();
+
+    if (term.isEmpty()) {
+        emit searchFinished({}, 0);
+        return;
+    }
+
+    const QString databasePath = databaseLocation();
+
+    if (!QFileInfo::exists(databasePath)) {
+        emit searchFailed(
+            "No index found. Please index a folder first."
+        );
+        return;
+    }
+
+    searching_ = true;
+    emit searchingChanged();
+
+    try {
+        searchWorker_ = std::jthread(
+            [this, databasePath, term](
+                std::stop_token stop
+            ) {
+                try {
+                    if (stop.stop_requested()) {
+                        return;
+                    }
+
+                    fastindex::storage::SqliteIndex database(
+                        toPath(databasePath)
+                    );
+
+                    // Treat user input as a literal FTS5 phrase.
+                    // Double quotes inside the phrase are escaped.
+                    QString phrase = term;
+                    phrase.replace(
+                        "\"",
+                        "\"\""
+                    );
+
+                    phrase = "\"" + phrase + "\"";
+
+                    const QByteArray utf8 = phrase.toUtf8();
+
+                    const auto matches = database.search(
+                        std::string_view(
+                            utf8.constData(),
+                            static_cast<std::size_t>(utf8.size())
+                        )
+                    );
+
+                    constexpr int maxVisibleResults = 100;
+
+                    QVariantList results;
+                    results.reserve(
+                        std::min(
+                            static_cast<int>(matches.size()),
+                            maxVisibleResults
+                        )
+                    );
+
+                    for (const auto& match : matches) {
+                        if (results.size() >= maxVisibleResults ||
+                            stop.stop_requested()) {
+                            break;
+                        }
+
+                        const QString path =
+                            QString::fromUtf8(
+                                match.path.c_str()
+                            );
+
+                        QVariantMap item;
+
+                        item.insert(
+                            "name",
+                            QFileInfo(path).fileName()
+                        );
+
+                        item.insert("path", path);
+
+                        item.insert(
+                            "snippet",
+                            QString::fromUtf8(
+                                match.snippet.c_str()
+                            )
+                        );
+
+                        results.append(item);
+                    }
+
+                    if (stop.stop_requested()) {
+                        return;
+                    }
+
+                    const int total =
+                        static_cast<int>(matches.size());
+
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this,
+                         results = std::move(results),
+                         total] {
+                            searching_ = false;
+                            emit searchingChanged();
+
+                            emit searchFinished(results, total);
+                        },
+                        Qt::QueuedConnection
+                    );
+                }
+                catch (const std::exception& error) {
+                    const QString message =
+                        QString::fromUtf8(error.what());
+
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, message] {
+                            searching_ = false;
+                            emit searchingChanged();
+                            emit searchFailed(message);
+                        },
+                        Qt::QueuedConnection
+                    );
+                }
+            }
+        );
+    }
+    catch (const std::exception& error) {
+        searching_ = false;
+        emit searchingChanged();
+        emit searchFailed(QString::fromUtf8(error.what()));
+    }
+}
+
+// --------------------------------------------------
+// Open Search Result
+// --------------------------------------------------
+
+void IndexingController::openFile(
+    const QString& path
+) {
+    if (!QFileInfo(path).isFile()) {
+        emit failed(
+            "File no longer exists: " + path
+        );
+        return;
+    }
+
+    if (!QDesktopServices::openUrl(
+            QUrl::fromLocalFile(path)
+        )) {
+        emit failed(
+            "Cannot open file: " + path
+        );
     }
 }
