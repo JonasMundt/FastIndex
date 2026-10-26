@@ -294,26 +294,78 @@ ApplicationWindow {
                 color: "#94a3b8"
             }
 
-            SpinBox {
-                id: workerSelector
 
-                from: 1
-                to: 16
-                stepSize: 1
+                Rectangle {
+                    Layout.preferredWidth: 148
+                    Layout.preferredHeight: 44
 
-                value: root.controller.workerCount
+                    radius: 8
+                    color: "#0f172a"
+                    border.color: "#475569"
+                    border.width: 1
 
-                editable: false
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 4
+                        spacing: 0
 
-                enabled: !root.controller.busy
-                         && !root.controller.searching
+                        Button {
+                            text: "−"
+                            flat: true
 
-                Layout.preferredWidth: 112
+                            Layout.preferredWidth: 40
+                            Layout.fillHeight: true
 
-                onValueModified: {
-                    root.controller.setWorkerCount(value)
+                            font.pixelSize: 20
+                            Material.foreground: "#cbd5e1"
+
+                            enabled: !root.controller.busy
+                                    && !root.controller.searching
+                                    && root.controller.workerCount > 1
+
+                            onClicked: {
+                                root.controller.setWorkerCount(
+                                    root.controller.workerCount - 1
+                                )
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+
+                            text: String(root.controller.workerCount)
+
+                            color: "#5eead4"
+                            font.pixelSize: 16
+                            font.bold: true
+
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        Button {
+                            text: "+"
+                            flat: true
+
+                            Layout.preferredWidth: 40
+                            Layout.fillHeight: true
+
+                            font.pixelSize: 20
+                            Material.foreground: "#cbd5e1"
+
+                            enabled: !root.controller.busy
+                                    && !root.controller.searching
+                                    && root.controller.workerCount < 16
+
+                            onClicked: {
+                                root.controller.setWorkerCount(
+                                    root.controller.workerCount + 1
+                                )
+                            }
+                        }
+                    }
                 }
-            }
+
         }
 
         // --------------------------------------
