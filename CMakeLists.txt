@@ -15,7 +15,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Qt Configuration
 # --------------------------------------------------
 
-find_package(Qt6 6.12 REQUIRED COMPONENTS Quick)
+find_package(Qt6 6.12 REQUIRED COMPONENTS
+    Quick
+    QuickControls2
+)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -112,6 +115,13 @@ target_link_libraries(fastindex_cli
 
 qt_add_executable(FastIndex
     src/main.cpp
+    src/app/IndexingController.hpp
+    src/app/IndexingController.cpp
+)
+
+target_include_directories(FastIndex
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 qt_add_qml_module(FastIndex
@@ -124,6 +134,7 @@ qt_add_qml_module(FastIndex
 target_link_libraries(FastIndex
     PRIVATE
         Qt6::Quick
+        Qt6::QuickControls2
         fastindex_indexing
 )
 
@@ -153,7 +164,6 @@ add_executable(fastindex_tests
     tests/SqliteIndexTests.cpp
     tests/IndexingServiceTests.cpp
     tests/BlockingQueueTests.cpp
-    tests/ParallelIndexingServiceTests.cpp
 )
 
 
