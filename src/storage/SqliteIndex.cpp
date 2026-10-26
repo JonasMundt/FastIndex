@@ -1,4 +1,3 @@
-
 #include "fastindex/storage/SqliteIndex.hpp"
 
 #include <sqlite3.h>

@@ -146,12 +146,15 @@ if(BUILD_TESTING)
 
     FetchContent_MakeAvailable(googletest)
 
-    add_executable(fastindex_tests
-        tests/FileScannerTests.cpp
-        tests/FileReaderTests.cpp
-        tests/SqliteIndexTests.cpp
-        tests/IndexingServiceTests.cpp
-    )
+
+add_executable(fastindex_tests
+    tests/FileScannerTests.cpp
+    tests/FileReaderTests.cpp
+    tests/SqliteIndexTests.cpp
+    tests/IndexingServiceTests.cpp
+    tests/BlockingQueueTests.cpp
+)
+
 
     target_link_libraries(fastindex_tests
         PRIVATE

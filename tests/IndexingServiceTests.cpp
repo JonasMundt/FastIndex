@@ -1,4 +1,3 @@
-
 #include "fastindex/indexing/IndexingService.hpp"
 
 #include <gtest/gtest.h>

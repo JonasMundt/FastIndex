@@ -1,4 +1,3 @@
-
 #include "fastindex/storage/SqliteIndex.hpp"
 
 #include <gtest/gtest.h>
