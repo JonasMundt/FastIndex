@@ -1,0 +1,29 @@
+
+# Build directories
+/build/
+/build-*/
+/cmake-build-*/
+/out/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+compile_commands.json
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Compiler output
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.dll
+
+# Temporary files
+*.tmp
+*.log
