@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <filesystem>
@@ -16,21 +17,28 @@ struct SearchResult {
 
 class SqliteIndex {
 public:
+    // ------------------------------------------
+    // Transaction Management
+    // ------------------------------------------
 
-class Transaction {
-public:
-    explicit Transaction(SqliteIndex& index);
-    ~Transaction() noexcept;
+    class Transaction {
+    public:
+        explicit Transaction(SqliteIndex& index);
+        ~Transaction() noexcept;
 
-    Transaction(const Transaction&) = delete;
-    Transaction& operator=(const Transaction&) = delete;
+        Transaction(const Transaction&) = delete;
+        Transaction& operator=(const Transaction&) = delete;
 
-    void commit();
+        void commit();
 
-private:
-    SqliteIndex& index_;
-    bool committed_ = false;
-};
+    private:
+        SqliteIndex& index_;
+        bool committed_ = false;
+    };
+
+    // ------------------------------------------
+    // Database Lifecycle
+    // ------------------------------------------
 
     explicit SqliteIndex(
         const std::filesystem::path& databasePath
@@ -44,10 +52,23 @@ private:
     SqliteIndex(SqliteIndex&&) = delete;
     SqliteIndex& operator=(SqliteIndex&&) = delete;
 
+    // ------------------------------------------
+    // File Operations
+    // ------------------------------------------
+
     void upsert(
         const std::filesystem::path& filePath,
         std::string_view content
     );
+
+    [[nodiscard]]
+    bool remove(
+        const std::filesystem::path& filePath
+    );
+
+    // ------------------------------------------
+    // Search
+    // ------------------------------------------
 
     [[nodiscard]]
     std::vector<SearchResult> search(

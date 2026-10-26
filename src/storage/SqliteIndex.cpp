@@ -208,6 +208,41 @@ void SqliteIndex::upsert(
     }
 }
 
+
+// --------------------------------------------------
+// Remove Indexed File
+// --------------------------------------------------
+
+bool SqliteIndex::remove(
+    const std::filesystem::path& filePath
+) {
+    constexpr auto sql = R"SQL(
+        DELETE FROM files
+        WHERE path = ?1;
+    )SQL";
+
+    auto statement = prepare(database_, sql);
+
+    const auto path = toUtf8(filePath);
+
+    bindText(
+        database_,
+        statement.get(),
+        1,
+        path
+    );
+
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw makeError(
+            database_,
+            "Delete failed"
+        );
+    }
+
+    return sqlite3_changes(database_) > 0;
+}
+
+
 // --------------------------------------------------
 // Full-Text Search
 // --------------------------------------------------

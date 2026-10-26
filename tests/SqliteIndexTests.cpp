@@ -115,3 +115,55 @@ TEST_F(SqliteIndexTest, RollsBackUncommittedTransaction) {
 
     EXPECT_TRUE(index.search("rollbackneedle").empty());
 }
+
+TEST_F(SqliteIndexTest, RemovesIndexedFileFromSearch) {
+    SqliteIndex index(databasePath());
+
+    index.upsert(
+        "deleted.txt",
+        "uniquedeletedneedle"
+    );
+
+    ASSERT_EQ(
+        index.search("uniquedeletedneedle").size(),
+        1u
+    );
+
+    // Remove the indexed file.
+    EXPECT_TRUE(index.remove("deleted.txt"));
+
+    // It must disappear from full-text search.
+    EXPECT_TRUE(
+        index.search("uniquedeletedneedle").empty()
+    );
+
+    // Removing it again should return false.
+    EXPECT_FALSE(index.remove("deleted.txt"));
+}
+
+TEST_F(SqliteIndexTest, RollbackRestoresDeletedFile) {
+    SqliteIndex index(databasePath());
+
+    index.upsert(
+        "important.txt",
+        "rollbackprotectedneedle"
+    );
+
+    {
+        SqliteIndex::Transaction transaction(index);
+
+        EXPECT_TRUE(index.remove("important.txt"));
+
+        EXPECT_TRUE(
+            index.search("rollbackprotectedneedle").empty()
+        );
+
+        // No commit: deletion must be rolled back.
+    }
+
+    EXPECT_EQ(
+        index.search("rollbackprotectedneedle").size(),
+        1u
+    );
+}
+
