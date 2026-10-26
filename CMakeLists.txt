@@ -125,6 +125,14 @@ target_include_directories(FastIndex
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+# On Linux, separate the QML module directory
+# from the executable to avoid a name collision.
+if(UNIX AND NOT APPLE)
+    set(QT_QML_OUTPUT_DIRECTORY
+        "${CMAKE_BINARY_DIR}/qml"
+    )
+endif()
+
 qt_add_qml_module(FastIndex
     URI FastIndex
     VERSION 1.0
