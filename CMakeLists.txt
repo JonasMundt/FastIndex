@@ -15,10 +15,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Qt Configuration
 # --------------------------------------------------
 
-find_package(Qt6 6.12 REQUIRED COMPONENTS
+find_package(Qt6 6.10 REQUIRED COMPONENTS
     Quick
     QuickControls2
 )
+
 
 qt_standard_project_setup(REQUIRES 6.8)
 
