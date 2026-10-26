@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <memory>
 
 namespace fastindex::indexing {
 
@@ -22,6 +23,14 @@ IndexingStats IndexingService::indexDirectory(
     const auto files = scanner_.scan(directory);
 
     stats.discovered = files.size();
+    
+    constexpr std::size_t batchSize = 100;
+
+    std::unique_ptr<storage::SqliteIndex::Transaction>
+        transaction;
+
+    std::size_t pendingWrites = 0;
+
 
     for (const auto& file : files) {
         std::string content;
@@ -54,11 +63,30 @@ IndexingStats IndexingService::indexDirectory(
         }
 
         // Database errors must not be silently ignored.
+        
+        if (!transaction) {
+            transaction =
+                std::make_unique<storage::SqliteIndex::Transaction>(
+                    index_
+                );
+        }
+
         index_.upsert(file, content);
 
         ++stats.indexed;
+        ++pendingWrites;
+
+        if (pendingWrites == batchSize) {
+            transaction->commit();
+            transaction.reset();
+            pendingWrites = 0;
+        }
+
     }
 
+    if (transaction) {
+    transaction->commit();
+    }
     return stats;
 }
 

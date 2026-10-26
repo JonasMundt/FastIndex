@@ -16,6 +16,22 @@ struct SearchResult {
 
 class SqliteIndex {
 public:
+
+class Transaction {
+public:
+    explicit Transaction(SqliteIndex& index);
+    ~Transaction() noexcept;
+
+    Transaction(const Transaction&) = delete;
+    Transaction& operator=(const Transaction&) = delete;
+
+    void commit();
+
+private:
+    SqliteIndex& index_;
+    bool committed_ = false;
+};
+
     explicit SqliteIndex(
         const std::filesystem::path& databasePath
     );

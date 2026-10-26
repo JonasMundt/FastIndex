@@ -85,3 +85,33 @@ TEST_F(SqliteIndexTest, PersistsDataAfterReopening) {
         EXPECT_EQ(results[0].path, "saved.txt");
     }
 }
+
+TEST_F(SqliteIndexTest, CommitsExplicitTransaction) {
+    SqliteIndex index(databasePath());
+
+    {
+        SqliteIndex::Transaction transaction(index);
+
+        index.upsert("first.txt", "batchalpha");
+        index.upsert("second.txt", "batchbeta");
+
+        transaction.commit();
+    }
+
+    EXPECT_EQ(index.search("batchalpha").size(), 1u);
+    EXPECT_EQ(index.search("batchbeta").size(), 1u);
+}
+
+TEST_F(SqliteIndexTest, RollsBackUncommittedTransaction) {
+    SqliteIndex index(databasePath());
+
+    {
+        SqliteIndex::Transaction transaction(index);
+
+        index.upsert("temporary.txt", "rollbackneedle");
+
+        // No commit: destructor must roll back.
+    }
+
+    EXPECT_TRUE(index.search("rollbackneedle").empty());
+}

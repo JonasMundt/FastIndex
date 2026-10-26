@@ -1,3 +1,4 @@
+
 #include "fastindex/storage/SqliteIndex.hpp"
 
 #include <sqlite3.h>
@@ -5,10 +6,15 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace fastindex::storage {
 
 namespace {
+
+// --------------------------------------------------
+// SQLite Statement Management
+// --------------------------------------------------
 
 using Statement = std::unique_ptr<
     sqlite3_stmt,
@@ -70,6 +76,10 @@ void bindText(
 }
 
 } // anonymous namespace
+
+// --------------------------------------------------
+// Database Initialization
+// --------------------------------------------------
 
 SqliteIndex::SqliteIndex(
     const std::filesystem::path& databasePath
@@ -140,24 +150,40 @@ SqliteIndex::SqliteIndex(
                 VALUES (new.id, new.content);
             END;
         )SQL");
-    } catch (...) {
+    }
+    catch (...) {
         sqlite3_close(database_);
         database_ = nullptr;
         throw;
     }
 }
 
+// --------------------------------------------------
+// Database Cleanup
+// --------------------------------------------------
+
 SqliteIndex::~SqliteIndex() {
     sqlite3_close(database_);
 }
+
+// --------------------------------------------------
+// SQL Execution
+// --------------------------------------------------
 
 void SqliteIndex::execute(const char* sql) {
     if (sqlite3_exec(
             database_, sql, nullptr, nullptr, nullptr
         ) != SQLITE_OK) {
-        throw makeError(database_, "SQL execution failed");
+        throw makeError(
+            database_,
+            "SQL execution failed"
+        );
     }
 }
+
+// --------------------------------------------------
+// Insert or Update File
+// --------------------------------------------------
 
 void SqliteIndex::upsert(
     const std::filesystem::path& filePath,
@@ -181,6 +207,10 @@ void SqliteIndex::upsert(
         throw makeError(database_, "Upsert failed");
     }
 }
+
+// --------------------------------------------------
+// Full-Text Search
+// --------------------------------------------------
 
 std::vector<SearchResult> SqliteIndex::search(
     std::string_view query
@@ -234,6 +264,34 @@ std::vector<SearchResult> SqliteIndex::search(
     }
 
     return results;
+}
+
+// --------------------------------------------------
+// Transaction Management (RAII)
+// --------------------------------------------------
+
+SqliteIndex::Transaction::Transaction(
+    SqliteIndex& index
+)
+    : index_(index) {
+
+    index_.execute("BEGIN IMMEDIATE;");
+}
+
+SqliteIndex::Transaction::~Transaction() noexcept {
+    if (!committed_) {
+        try {
+            index_.execute("ROLLBACK;");
+        }
+        catch (...) {
+            // Destructors must not throw.
+        }
+    }
+}
+
+void SqliteIndex::Transaction::commit() {
+    index_.execute("COMMIT;");
+    committed_ = true;
 }
 
 } // namespace fastindex::storage

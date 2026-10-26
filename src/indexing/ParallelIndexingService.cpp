@@ -3,10 +3,14 @@
 #include "fastindex/concurrency/BlockingQueue.hpp"
 
 #include <atomic>
+#include <cstddef>
 #include <exception>
+#include <filesystem>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <utility>
@@ -16,13 +20,21 @@ namespace fastindex::indexing {
 
 namespace {
 
+// --------------------------------------------------
+// Worker Result
+// --------------------------------------------------
+
 struct ReadResult {
     std::filesystem::path path;
     std::string content;
     std::optional<std::string> error;
 };
 
-} // namespace
+} // anonymous namespace
+
+// --------------------------------------------------
+// Constructor
+// --------------------------------------------------
 
 ParallelIndexingService::ParallelIndexingService(
     storage::SqliteIndex& index,
@@ -40,21 +52,27 @@ ParallelIndexingService::ParallelIndexingService(
     }
 }
 
+// --------------------------------------------------
+// Parallel Indexing
+// --------------------------------------------------
+
 IndexingStats ParallelIndexingService::indexDirectory(
     const std::filesystem::path& directory,
     std::stop_token externalStop
 ) {
     IndexingStats stats;
 
+    // Check for cancellation before starting.
     if (externalStop.stop_requested()) {
         stats.cancelled = true;
         return stats;
     }
 
+    // Discover supported files.
     const auto files = scanner_.scan(directory);
     stats.discovered = files.size();
 
-    // Bound the number of buffered file contents.
+    // Bounded queue for processed file contents.
     concurrency::BlockingQueue<ReadResult> results(
         workerCount_
     );
@@ -64,7 +82,10 @@ IndexingStats ParallelIndexingService::indexDirectory(
         workerCount_
     };
 
-    // Shared cancellation state.
+    // --------------------------------------------------
+    // Cancellation Management
+    // --------------------------------------------------
+
     std::stop_source stopSource;
 
     std::stop_callback externalCallback(
@@ -76,8 +97,16 @@ IndexingStats ParallelIndexingService::indexDirectory(
 
     const auto token = stopSource.get_token();
 
+    // --------------------------------------------------
+    // Worker Error Handling
+    // --------------------------------------------------
+
     std::mutex failureMutex;
     std::exception_ptr workerFailure;
+
+    // --------------------------------------------------
+    // Worker Function
+    // --------------------------------------------------
 
     auto worker = [&](std::stop_token threadStop) {
         try {
@@ -105,11 +134,11 @@ IndexingStats ParallelIndexingService::indexDirectory(
                         maxFileBytes_
                     );
                 }
-                catch (const std::length_error& e) {
-                    result.error = e.what();
+                catch (const std::length_error& error) {
+                    result.error = error.what();
                 }
-                catch (const std::runtime_error& e) {
-                    result.error = e.what();
+                catch (const std::runtime_error& error) {
+                    result.error = error.what();
                 }
 
                 if (!results.push(
@@ -132,11 +161,15 @@ IndexingStats ParallelIndexingService::indexDirectory(
             stopSource.request_stop();
         }
 
-        // Last worker closes the result queue.
+        // Last worker closes the queue.
         if (activeWorkers.fetch_sub(1) == 1) {
             results.close();
         }
     };
+
+    // --------------------------------------------------
+    // Start Worker Threads
+    // --------------------------------------------------
 
     std::vector<std::jthread> workers;
     workers.reserve(workerCount_);
@@ -159,9 +192,22 @@ IndexingStats ParallelIndexingService::indexDirectory(
         throw;
     }
 
-    // The calling thread is the only SQLite writer.
+    // --------------------------------------------------
+    // SQLite Writer with Batch Transactions
+    // --------------------------------------------------
+
+    constexpr std::size_t batchSize = 100;
+
+    std::unique_ptr<storage::SqliteIndex::Transaction>
+        transaction;
+
+    std::size_t pendingWrites = 0;
+
+    // Only the calling thread writes to SQLite.
     try {
         while (auto result = results.pop(token)) {
+
+            // Handle failed file reads.
             if (result->error) {
                 ++stats.skipped;
 
@@ -173,15 +219,38 @@ IndexingStats ParallelIndexingService::indexDirectory(
                 continue;
             }
 
+            // Start a new transaction if necessary.
+            if (!transaction) {
+                transaction = std::make_unique<
+                    storage::SqliteIndex::Transaction
+                >(index_);
+            }
+
+            // Store the processed file.
             index_.upsert(
                 result->path,
                 result->content
             );
 
             ++stats.indexed;
+            ++pendingWrites;
+
+            // Commit a full batch.
+            if (pendingWrites == batchSize) {
+                transaction->commit();
+                transaction.reset();
+
+                pendingWrites = 0;
+            }
+        }
+
+        // Commit the remaining files.
+        if (transaction) {
+            transaction->commit();
         }
     }
     catch (...) {
+        // Stop workers if a database error occurs.
         stopSource.request_stop();
         results.close();
 
@@ -189,14 +258,23 @@ IndexingStats ParallelIndexingService::indexDirectory(
             thread.join();
         }
 
+        // Transaction destructor rolls back
+        // any uncommitted changes.
         throw;
     }
+
+    // --------------------------------------------------
+    // Wait for Workers
+    // --------------------------------------------------
 
     for (auto& thread : workers) {
         thread.join();
     }
 
-    // Propagate unexpected worker failures.
+    // --------------------------------------------------
+    // Propagate Unexpected Worker Failures
+    // --------------------------------------------------
+
     {
         std::lock_guard lock(failureMutex);
 
@@ -204,6 +282,10 @@ IndexingStats ParallelIndexingService::indexDirectory(
             std::rethrow_exception(workerFailure);
         }
     }
+
+    // --------------------------------------------------
+    // Final Statistics
+    // --------------------------------------------------
 
     stats.cancelled = token.stop_requested();
 
