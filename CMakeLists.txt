@@ -74,6 +74,25 @@ target_link_libraries(fastindex_storage
 )
 
 # --------------------------------------------------
+# Indexing Library
+# --------------------------------------------------
+
+add_library(fastindex_indexing STATIC
+    src/indexing/IndexingService.cpp
+)
+
+target_include_directories(fastindex_indexing
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(fastindex_indexing
+    PUBLIC
+        fastindex_core
+        fastindex_storage
+)
+
+# --------------------------------------------------
 # Desktop Application
 # --------------------------------------------------
 
@@ -91,8 +110,7 @@ qt_add_qml_module(FastIndex
 target_link_libraries(FastIndex
     PRIVATE
         Qt6::Quick
-        fastindex_core
-        fastindex_storage
+        fastindex_indexing
 )
 
 # --------------------------------------------------
@@ -119,12 +137,12 @@ if(BUILD_TESTING)
         tests/FileScannerTests.cpp
         tests/FileReaderTests.cpp
         tests/SqliteIndexTests.cpp
+        tests/IndexingServiceTests.cpp
     )
 
     target_link_libraries(fastindex_tests
         PRIVATE
-            fastindex_core
-            fastindex_storage
+            fastindex_indexing
             GTest::gtest_main
     )
 
