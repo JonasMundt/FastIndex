@@ -21,6 +21,8 @@ struct IndexingStats {
     std::size_t indexed = 0;
     std::size_t skipped = 0;
 
+    bool cancelled = false;
+
     std::vector<IndexingError> errors;
 };
 

@@ -79,6 +79,7 @@ target_link_libraries(fastindex_storage
 
 add_library(fastindex_indexing STATIC
     src/indexing/IndexingService.cpp
+    src/indexing/ParallelIndexingService.cpp
 )
 
 target_include_directories(fastindex_indexing
@@ -146,13 +147,13 @@ if(BUILD_TESTING)
 
     FetchContent_MakeAvailable(googletest)
 
-
 add_executable(fastindex_tests
     tests/FileScannerTests.cpp
     tests/FileReaderTests.cpp
     tests/SqliteIndexTests.cpp
     tests/IndexingServiceTests.cpp
     tests/BlockingQueueTests.cpp
+    tests/ParallelIndexingServiceTests.cpp
 )
 
 
