@@ -93,6 +93,19 @@ target_link_libraries(fastindex_indexing
 )
 
 # --------------------------------------------------
+# Command Line Application
+# --------------------------------------------------
+
+add_executable(fastindex_cli
+    src/cli/main.cpp
+)
+
+target_link_libraries(fastindex_cli
+    PRIVATE
+        fastindex_indexing
+)
+
+# --------------------------------------------------
 # Desktop Application
 # --------------------------------------------------
 
