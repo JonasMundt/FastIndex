@@ -1,0 +1,18 @@
+
+# Automatically detect text files
+* text=auto
+
+# Source code: Unix line endings
+*.cpp text eol=lf
+*.hpp text eol=lf
+*.h text eol=lf
+*.qml text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+
+# Documentation
+*.md text eol=lf
+
+# Windows scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf
